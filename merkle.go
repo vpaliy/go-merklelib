@@ -1,53 +1,7 @@
 package merklelib
 
-import (
-  "encoding/gob"
-  "bytes"
-  "encoding/hex"
-)
-
-var sentinel = new(Node)
-
-func toBytes(item interface{}) []byte {
-  switch value := item.(type) {
-  case string:
-    return []byte(value)
-  case []byte:
-    return value
-  }
-  var buf bytes.Buffer
-  enc := gob.NewEncoder(&buf)
-  err := enc.Encode(item)
-  // TODO: check this error here
-  if err != nil {
-    return nil
-  }
-  return buf.Bytes()
-}
-
-func toHex(src []byte) []byte {
-  dst := make([]byte, hex.EncodedLen(len(src)))
-  hex.Encode(dst, src)
-  return dst
-}
-
-type NodeType int16
-
-const (
-  LEFT  NodeType = 0
-  RIGHT NodeType = 1
-  LEAF  NodeType = 2
-)
-
 // an alias for a hash function
 type HashFunc func([] byte) []byte
-
-// Building block
-type Node struct {
-  hashVal []byte
-  pos NodeType
-  left, right, parent *Node
-}
 
 type Hasher struct {
   hashfunc HashFunc
@@ -55,8 +9,9 @@ type Hasher struct {
 
 type Tree struct {
   hasher Hasher
-  root *Node
-  mapping map[string]*Node
+  root *MerkleNode
+  // TODO: replace this thing
+  mapping map[string]*MerkleNode
 }
 
 type AuditProofNode struct {
@@ -66,10 +21,6 @@ type AuditProofNode struct {
 
 type AuditProof struct {
   Nodes []AuditProofNode
-}
-
-func newNode(hashVal []byte) *Node {
-  return &Node { hashVal, LEAF, nil, nil, nil }
 }
 
 func (hasher *Hasher) HashLeaf(leaf interface{}) []byte {
@@ -86,7 +37,7 @@ func (hasher *Hasher) HashChildren(left, right interface{}) []byte {
 // creates a new Merkle tree with the provided hasher
 func New(hashfunc HashFunc) *Tree {
   hasher := Hasher { hashfunc }
-  return &Tree { hasher, nil, make(map[string]*Node) }
+  return &Tree { hasher, nil, make(map[string]*MerkleNode) }
 }
 
 // return the merkle hash root
@@ -102,7 +53,7 @@ func (tree *Tree) Leaves() [][]byte {
 // append multiple nodes to the tree
 func (tree *Tree) Extend(data...[]interface{}) {
   if tree.root == nil {
-    nodes := make([]*Node, len(data))
+    nodes := make([]*MerkleNode, len(data))
     for index, item := range data {
       hashVal := tree.hasher.HashLeaf(item)
       node := newNode(hashVal)
@@ -115,20 +66,31 @@ func (tree *Tree) Extend(data...[]interface{}) {
         nodes = append(nodes, sentinel)
       }
       // compute the next level of nodes
-      var temp []*Node
-      for i := 0; i < len(nodes); i += 2 {
-        temp = append(temp, nodes[i])
+      var temp []*MerkleNode
+      for i := 1; i < len(nodes); i += 2 {
+        newNode := mergeNodes(tree.hasher, nodes[i-1], nodes[i])
+        temp = append(temp, newNode)
       }
       nodes = temp
     }
 
     tree.root = nodes[0]
+  } else {
+    // otherwise just append them
+    for item := range data {
+      tree.Append(item)
+    }
   }
 }
 
 // append an additional node
 func (tree *Tree) Append(item interface{}) {
+  if tree.root == nil {
+    tree.root = newNode(tree.hasher.HashLeaf(item))
+    return
+  }
 
+  // TODO: use ordered map here
 }
 
 // updating only real byte, nothing else there
