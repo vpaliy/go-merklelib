@@ -52,3 +52,15 @@ func mergeNodes(hasher Hasher, left, right *MerkleNode) *MerkleNode {
 	left.parent = newNode
 	return newNode
 }
+
+func (node *MerkleNode) sibling() *MerkleNode {
+	parent := node.parent
+	switch {
+	case parent == nil:
+		return nil
+	case parent.left == node:
+		return parent.right
+	default:
+		return parent.left
+	}
+}

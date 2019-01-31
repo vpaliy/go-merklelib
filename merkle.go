@@ -8,10 +8,9 @@ type Hasher struct {
 }
 
 type Tree struct {
-	hasher Hasher
-	root   *MerkleNode
-	// TODO: replace this thing
-	mapping map[string]*MerkleNode
+	hasher  Hasher
+	root    *MerkleNode
+	mapping OrderedMap
 }
 
 type AuditProofNode struct {
@@ -54,10 +53,11 @@ func (tree *Tree) Leaves() [][]byte {
 func (tree *Tree) Extend(data ...[]interface{}) {
 	if tree.root == nil {
 		nodes := make([]*MerkleNode, len(data))
+		mapping := tree.mapping
 		for index, item := range data {
 			hashVal := tree.hasher.HashLeaf(item)
 			node := newNode(hashVal)
-			tree.mapping[string(hashVal)] = node
+			mapping.Add(string(hashVal), node)
 			nodes[index] = node
 		}
 
@@ -83,31 +83,107 @@ func (tree *Tree) Extend(data ...[]interface{}) {
 	}
 }
 
+// rehash some part of the tree starting from a specific node
+func (tree *Tree) rehash(node *MerkleNode) {
+	var parent, sibling *MerkleNode
+	for node != tree.root {
+		parent = node.parent
+		sibiling = node.sibiling()
+		parent.hashVal = concatHashes(tree.hasher, node, sibiling)
+		node = parent
+	}
+}
+
 // append an additional node
 func (tree *Tree) Append(item interface{}) {
 	if tree.root == nil {
-		tree.root = newNode(tree.hasher.HashLeaf(item))
+		node := newNode(tree.hasher.HashLeaf(item))
+		tree.root = node
+		tree.mapping.Add(string(node.hashVal), node)
 		return
 	}
 
-	// TODO: use ordered map here
+	last := tree.mapping.Last()
+	newHash := tree.hasher.HashLeaf(item)
+	node := newNode(newHash)
+	tree.mapping[string(newHash)] = node
+
+	if last == tree.root {
+		tree.root = mergeNodes(tree.hasher, tree.root, last)
+		return
+	}
+
+	sibiling := last.sibling()
+	connector := last.parent
+
+	if sibling == sentinel {
+		node.parent = connector
+		connector.right = node
+		tree.rehash(node)
+		return
+	}
+
+	node.right = sentinel
+	for connector != tree.root {
+		node = mergeNodes(tree.hasher, node, sentinel)
+		sibiling = connector.sibiling
+
+		if sibiling == sentinel {
+			connector.parent.right = node
+			node.parent = connector.parent
+			tree.rehash(node)
+			return
+		}
+
+		connector = connector.parent
+	}
+
+	node = mergeNodes(tree.hasher, node, sentinel)
+	tree.root = mergeNodes(tree.hasher, connector, node)
 }
 
-// updating only real byte, nothing else there
-func (tree *Tree) Update(old, new []byte) {
-
+func (tree *Tree) getLeaf(leaf interface{}) *MerkleNode {
+	key := toBytes(old)
+	leaf := tree.mapping.Get(string(key))
+	// try hashing
+	if leaf == nil {
+		key = tree.hasher.HashLeaf(key)
+		leaf = tree.mapping.Get(string(key))
+	}
+	return leaf
 }
 
-// remove a single node from the tree
-func (tree *Tree) Remove(item []byte) {
-
+// updating items
+func (tree *Tree) Update(old, new interface{}) {
+	leaf := tree.getLeaf(old)
+	if leaf != nil {
+		tree.mapping.Delete(string(leaf.hashVal))
+		hashVal := tree.hasher.HashLeaf(new)
+		leaf.hashVal = hashVal
+		tree.mapping.Add(string(hashVal), leaf)
+		tree.rehash(leaf)
+	}
+	// TODO: throw an error
 }
 
 // get an audit proof that an item / leaf is in the tree
-func (tree *Tree) GetProof(leaf interface{}) {
-
+func (tree *Tree) GetProof(leaf interface{}) *AuditProof {
+	leaf := tree.getLeaf(leaf)
+	if leaf != nil {
+		paths := make([]AuditProofNode)
+		for leaf != tree.root {
+			sibiling := leaf.sibling()
+			if sibling != sentinel {
+				node := AuditProofNode(sibling.hashVal, sibiling.Position())
+				paths = append(paths, node)
+			}
+			leaf = leaf.parent
+		}
+		return &AuditProof{paths}
+	}
 }
 
 func (tree *Tree) Clear() {
-
+	tree.root = nil
+	tree.mapping.Clear()
 }

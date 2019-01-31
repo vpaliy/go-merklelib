@@ -1,18 +1,18 @@
 package merklelib
 
-type node struct {
+type mapnode struct {
 	key        string
 	value      *MerkleNode
-	next, prev *node
+	next, prev *mapnode
 }
 
 type OrderedMap struct {
-	head, tail *node
-	mapping    map[string]*node
+	head, tail *mapnode
+	mapping    map[string]*mapnode
 }
 
 func (dict *OrderedMap) Add(key string, value *MerkleNode) {
-	newNode := &node{key, value, nil, nil}
+	newNode := &mapnode{key, value, nil, nil}
 	if dict.head == nil {
 		dict.head = newNode
 		dict.tail = newNode
@@ -85,4 +85,20 @@ func (dict *OrderedMap) First() *MerkleNode {
 		return nil
 	}
 	return dict.Get(dict.head.key)
+}
+
+func (dict *OrderedMap) Clear() {
+	for key := range dict.mapping {
+		delete(dict.mapping, key)
+	}
+
+	node := dict.head
+	for node != nil {
+		node.value = nil
+		if node.prev != nil {
+			node.prev.next = nil
+			node.prev = nil
+		}
+		node = node.next
+	}
 }
