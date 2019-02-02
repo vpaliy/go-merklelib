@@ -31,7 +31,7 @@ func (node *MerkleNode) Position() NodeType {
 	}
 }
 
-func concatHashes(hasher Hasher, left, right *MerkleNode) []byte {
+func concat(hasher Hasher, left, right interface{}) []byte {
 	switch {
 	case left == sentinel:
 		return right.hashVal
@@ -63,4 +63,15 @@ func (node *MerkleNode) sibling() *MerkleNode {
 	default:
 		return parent.left
 	}
+}
+
+func (m *MerkleNode) climbTo(level uint) *MerkleNode {
+	node := m
+	for ; level > 0; level-- {
+		if node == nil {
+			return nil
+		}
+		node = node.parent
+	}
+	return node
 }

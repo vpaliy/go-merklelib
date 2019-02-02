@@ -1,10 +1,20 @@
 package merklelib
 
+import (
+	"math"
+	"math/bits"
+)
+
+var (
+	ErrInvalidHasherType = error.New("Invalid hasher object.")
+	ErrInvalidAuditProof = error.New("Invalid audit proof object.")
+)
+
 // an alias for a hash function
 type HashFunc func([]byte) []byte
 
 type Hasher struct {
-	hashfunc HashFunc
+	hashFunc HashFunc
 }
 
 type Tree struct {
@@ -24,18 +34,18 @@ type AuditProof struct {
 
 func (hasher *Hasher) HashLeaf(leaf interface{}) []byte {
 	buffer := toBytes(leaf)
-	return hasher.hashfunc(append(buffer, 0x00))
+	return hasher.hashFunc(append(buffer, 0x00))
 }
 
 // hash children together by adding 0x01 byte
 func (hasher *Hasher) HashChildren(left, right interface{}) []byte {
 	buffer := append(toBytes(left), toBytes(right)...)
-	return hasher.hashfunc(append(buffer, 0x01))
+	return hasher.hashFunc(append(buffer, 0x01))
 }
 
 // creates a new Merkle tree with the provided hasher
-func New(hashfunc HashFunc) *Tree {
-	hasher := Hasher{hashfunc}
+func New(hashFunc HashFunc) *Tree {
+	hasher := Hasher{hashFunc}
 	return &Tree{hasher, nil, make(map[string]*MerkleNode)}
 }
 
@@ -186,4 +196,73 @@ func (tree *Tree) GetProof(leaf interface{}) *AuditProof {
 func (tree *Tree) Clear() {
 	tree.root = nil
 	tree.mapping.Clear()
+}
+
+// TODO: move to the utils file?
+func toHasher(item interface{}) (*Hasher, error) {
+	switch value := item.(type) {
+	case Hasher:
+		return value, nil
+	case HashFunc:
+		return &Hasher{value}, nil
+	default:
+		return nil, ErrInvalidHasherType
+	}
+}
+
+func (tree *Tree) Size() uint {
+	return tree.mapping.size()
+}
+
+func (tree *Tree) VerifyTreeConsistency(oldRootHash []byte, oldTreeSize uint) bool {
+	treeSize := tree.Size()
+	if treeSize < oldTreeSize {
+		return false
+	}
+
+	rootHash := tree.root.hashVal
+
+	if treeSize == oldTreeSize {
+		return rootHash == oldRootHash
+	}
+
+	leaves := tree.mapping.Values()
+	index, paths := 0, make([]*MerkleNode)
+
+	for oldTreeSize > 0 {
+		level := math.Exp2(float64(bits.Len(oldTreeSize)))
+		node := leaves[index].climbNode(uint(math.log2(level)))
+		if node == nil {
+			return false
+		}
+		paths = append(paths, node)
+		index += uint(level)
+		oldTreeSize -= uint(level)
+	}
+
+	return paths[0].hashVal == oldRootHash
+}
+
+func VerifyLeafInclusion(leaf interface{}, proof *AuditProof, hasher interface{}, rootHash []byte) (bool, error) {
+	if len(proof.Nodes) < 1 {
+		return false, ErrInvalidAuditProof
+	}
+	nodes := proof.Nodes
+	// if hasher is a hash function, convert it to hasher
+	hasher, err := toHasher(hasher)
+	if err != nil {
+		return false, err
+	}
+	// try without hashing
+	leaf, err := toBytes(leaf)
+	if err != nil {
+		return false, err
+	}
+
+	newRoot := leaf
+	for _, right := range nodes[1:] {
+		// TODO: concat hashes
+	}
+
+	return newRoot == rootHash
 }
