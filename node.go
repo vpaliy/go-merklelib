@@ -1,17 +1,27 @@
 package merklelib
 
-type NodeType int16
+type NodePosition int16
 
 const (
-	Left  NodeType = 0
-	Right NodeType = 1
-	Leaf  NodeType = 2
+	Undefined NodePosition = iota + 1
+	Right
+	Left
 )
+
+// TODO: make it private?
+type Positioner interface {
+	position() NodePosition
+}
 
 // Building block
 type MerkleNode struct {
 	hashVal             []byte
 	left, right, parent *MerkleNode
+}
+
+type AuditProofNode struct {
+	hashVal []byte
+	pos     NodePosition
 }
 
 var sentinel = new(MerkleNode)
@@ -20,10 +30,10 @@ func newNode(hashVal []byte) *MerkleNode {
 	return &MerkleNode{hashVal, nil, nil, nil}
 }
 
-func (node *MerkleNode) Position() NodeType {
+func (node *MerkleNode) position() NodePosition {
 	switch {
 	case node.parent == nil:
-		return Leaf
+		return Undefined
 	case node.parent.left == node:
 		return Left
 	default:
@@ -31,21 +41,64 @@ func (node *MerkleNode) Position() NodeType {
 	}
 }
 
-func concat(hasher Hasher, left, right interface{}) []byte {
-	switch {
-	case left == sentinel:
-		return right.hashVal
-	case right == sentinel:
-		return left.hashVal
-	case left.Position() == Right || right.Position() == Left:
-		return hasher.HashChildren(right, left)
+func (node *AuditProofNode) position() NodePosition {
+	return node.pos
+}
+
+func getHashVal(node interface{}) []byte {
+	switch value := node.(type) {
+	case *MerkleNode:
+		return value.hashVal
+	case *AuditProofNode:
+		return value.hashVal
+	case AuditProofNode:
+		return value.hashVal
+	case []byte:
+		return value
 	default:
-		return hasher.HashChildren(left, right)
+		// TODO: add error to the return type?
+		// I can't see a scenario when this could happen
+		return nil
 	}
 }
 
+func isSentinel(node interface{}) bool {
+	if value, ok := node.(*MerkleNode); ok {
+		return value == sentinel
+	}
+	return false
+}
+
+func isRight(node interface{}) bool {
+	if value, ok := node.(Positioner); ok {
+		return value.position() == Right
+	}
+	return false
+}
+
+func isLeft(node interface{}) bool {
+	if value, ok := node.(Positioner); ok {
+		return value.position() == Left
+	}
+	return false
+}
+
+func concat(hasher Hasher, left, right interface{}) []byte {
+	if isSentinel(right) {
+		return getHashVal(left)
+	} else if isSentinel(left) {
+		return getHashVal(right)
+	}
+
+	if isRight(left) || isLeft(right) {
+		return hasher.HashChildren(right, left)
+	}
+
+	return hasher.HashChildren(left, right)
+}
+
 func mergeNodes(hasher Hasher, left, right *MerkleNode) *MerkleNode {
-	hashVal := concatHashes(hasher, left, right)
+	hashVal := concat(hasher, left, right)
 	newNode := &MerkleNode{hashVal, left, right, nil}
 	// update their parents
 	right.parent = newNode
@@ -65,7 +118,7 @@ func (node *MerkleNode) sibling() *MerkleNode {
 	}
 }
 
-func (m *MerkleNode) climbTo(level uint) *MerkleNode {
+func (m *MerkleNode) climbTo(level int) *MerkleNode {
 	node := m
 	for ; level > 0; level-- {
 		if node == nil {
@@ -74,4 +127,9 @@ func (m *MerkleNode) climbTo(level uint) *MerkleNode {
 		node = node.parent
 	}
 	return node
+}
+
+func (node *MerkleNode) createAuditProofNode() *AuditProofNode {
+	a := AuditProofNode{node.hashVal, node.position()}
+	return &a
 }

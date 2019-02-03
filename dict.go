@@ -102,3 +102,7 @@ func (dict *OrderedMap) Clear() {
 		node = node.next
 	}
 }
+
+func (dict *OrderedMap) Len() int {
+	return len(dict.mapping)
+}
