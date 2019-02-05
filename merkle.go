@@ -87,7 +87,7 @@ func (tree *Tree) Extend(data ...interface{}) {
 			// compute the next level of nodes
 			var temp []*MerkleNode
 			for i := 1; i < len(nodes); i += 2 {
-				newNode := mergeNodes(tree.hasher, nodes[i-1], nodes[i])
+				newNode := mergeNodes(&tree.hasher, nodes[i-1], nodes[i])
 				temp = append(temp, newNode)
 			}
 			nodes = temp
@@ -107,7 +107,7 @@ func (tree *Tree) rehash(node *MerkleNode) {
 	for node != tree.root {
 		parent := node.parent
 		sibling := node.sibling()
-		parent.hashVal = concat(tree.hasher, node, sibling)
+		parent.hashVal = concat(&tree.hasher, node, sibling)
 		node = parent
 	}
 }
@@ -127,7 +127,7 @@ func (tree *Tree) Append(item interface{}) {
 	tree.mapping.Add(string(newHash), node)
 
 	if last == tree.root {
-		tree.root = mergeNodes(tree.hasher, tree.root, last)
+		tree.root = mergeNodes(&tree.hasher, tree.root, last)
 		return
 	}
 
@@ -143,7 +143,7 @@ func (tree *Tree) Append(item interface{}) {
 
 	node.right = sentinel
 	for connector != tree.root {
-		node = mergeNodes(tree.hasher, node, sentinel)
+		node = mergeNodes(&tree.hasher, node, sentinel)
 		sibling = connector.sibling()
 
 		if sibling == sentinel {
@@ -156,8 +156,8 @@ func (tree *Tree) Append(item interface{}) {
 		connector = connector.parent
 	}
 
-	node = mergeNodes(tree.hasher, node, sentinel)
-	tree.root = mergeNodes(tree.hasher, connector, node)
+	node = mergeNodes(&tree.hasher, node, sentinel)
+	tree.root = mergeNodes(&tree.hasher, connector, node)
 }
 
 func (tree *Tree) getLeaf(leaf interface{}) *MerkleNode {
@@ -285,12 +285,12 @@ func VerifyLeafInclusion(item interface{}, proof *AuditProof, hasherObj interfac
 	newHashRoot := reduceToBytes(hasher, nodes)
 	if !bytes.Equal(newHashRoot, rootHash) {
 		leaf = hasher.HashLeaf(leaf)
-		newHashRoot := reduceToBytes(hasher, nodes)
+		newHashRoot = reduceToBytes(hasher, nodes)
 	}
 	return bytes.Equal(newHashRoot, rootHash), nil
 }
 
-func reduceToBytes(hasher *Hasher, data ...interface{}) []bytes {
+func reduceToBytes(hasher *Hasher, data ...interface{}) []byte {
 	if len(data) < 2 {
 		// TODO: return an error instead
 		return nil
@@ -299,7 +299,7 @@ func reduceToBytes(hasher *Hasher, data ...interface{}) []bytes {
 	result := concat(hasher, data[0], data[1])
 
 	for _, item := range data[2:] {
-		result := concat(result, item)
+		result = concat(hasher, result, item)
 	}
 	return result
 }

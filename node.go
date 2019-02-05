@@ -83,7 +83,7 @@ func isLeft(node interface{}) bool {
 	return false
 }
 
-func concat(hasher Hasher, left, right interface{}) []byte {
+func concat(hasher *Hasher, left, right interface{}) []byte {
 	if isSentinel(right) {
 		return getHashVal(left)
 	} else if isSentinel(left) {
@@ -97,7 +97,7 @@ func concat(hasher Hasher, left, right interface{}) []byte {
 	return hasher.HashChildren(left, right)
 }
 
-func mergeNodes(hasher Hasher, left, right *MerkleNode) *MerkleNode {
+func mergeNodes(hasher *Hasher, left, right *MerkleNode) *MerkleNode {
 	hashVal := concat(hasher, left, right)
 	newNode := &MerkleNode{hashVal, left, right, nil}
 	// update their parents
